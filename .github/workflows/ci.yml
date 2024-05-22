@@ -1,0 +1,92 @@
+name: Build
+
+on:
+  pull_request:
+    branch:
+      - main
+
+jobs:
+  set-up:
+    name: Set-Up
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.head_ref, 'feature') || startsWith(github.head_ref, 'fix') || startsWith(github.head_ref, 'dependabot') || startsWith(github.head_ref, 'test') }}
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.1
+      - name: Install dependencies
+        run: go mod tidy
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs:
+      - set-up
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.1
+      - name: Linting
+        run: go fmt ./...
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.1
+      - name: Run Unit Tests
+        run: go test -v --covermode atomic --coverpkg github.com/wecoach-ai/AuthService/internal/app --coverprofile ./dist/mr.unit.profile.out internal/app_test/unit/*
+        env:
+          DB_CONNECTION_URI: ${{ secrets.CI_TEST_DB_CONNECTION_URI }}
+          DB_BACKEND: ${{ vars.CI_TEST_DB_BACKEND }}
+          ENVIRONMENT: ${{ vars.CI_TEST_ENVIRONMENT }}
+          ACCESS_TOKEN_SIGNING_KEY: ${{ secrets.CI_TEST_ACCESS_TOKEN_SIGNING_KEY }}
+          REFRESH_TOKEN_SIGNING_KEY: ${{ secrets.CI_TEST_REFRESH_TOKEN_SIGNING_KEY }}
+      - name: Upload unit test coverage to Codecov
+        uses: codecov/codecov-action@v4.4.1
+        with:
+          files: dist/mr.unit.profile.out
+          flags: unittests
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+          codecov_yml_path: ./.github/codecov.yml
+          slug: wecoach-ai/AuthService
+  build:
+    name: Build
+    if: ${{ startsWith(github.head_ref, 'feature') || startsWith(github.head_ref, 'fix') || startsWith(github.head_ref, 'dependabot') || ! startsWith(github.head_ref, 'test') }}
+    runs-on: ubuntu-latest
+    needs:
+      - test
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.1
+      - name: Build
+        run: go build -o bin/auth cmd/main.go
+
